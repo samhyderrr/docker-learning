@@ -1,8 +1,8 @@
 # Flask Docker Practice
 
-This project was created as part of my Docker learning to understand the full process of taking a simple application and running it inside a Docker container.
+This project documents my Docker learning from containerising a simple Flask application through to connecting a Flask container to a separate MySQL container using a custom Docker network.
 
-The main goal was to understand the following workflow:
+The learning progression is:
 
 ```text
 Application
@@ -17,31 +17,18 @@ docker run
     ↓
 Docker Container
     ↓
-Application Running
+Docker Network
+    ↓
+Multiple Containers Communicating
 ```
 
 ---
 
-## What I Built
+# Part 1 - Containerising the Flask Application
 
-I created a simple Python Flask web application that displays a message in the browser.
+## 1. Flask Application
 
-The project contains:
-
-```text
-hello_flask_practice/
-├── app.py
-├── Dockerfile
-└── README.md
-```
-
-The application runs on port `5000`.
-
----
-
-# 1. Creating the Flask Application
-
-The Flask application is stored in `app.py`:
+A basic Flask application was first tested locally before Docker was introduced.
 
 ```python
 from flask import Flask
@@ -53,66 +40,40 @@ def hello():
     return 'Hello from my practice container!'
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5001)
 ```
 
-### What the code does
-
-- `from flask import Flask`
-  - Imports Flask into the Python application.
-
-- `app = Flask(__name__)`
-  - Creates the Flask application.
-
-- `@app.route('/')`
-  - Defines what happens when someone visits the root `/` URL.
-
-- `return 'Hello from my practice container!'`
-  - Returns the message displayed in the browser.
-
-- `app.run(host='0.0.0.0', port=5000)`
-  - Starts the Flask web server on port `5000`.
-  - `0.0.0.0` allows the application to listen on all available network interfaces, which is important when running the application inside a container.
+`0.0.0.0` allows Flask to listen on all available network interfaces, which is important when the application runs inside a container.
 
 ---
 
-# 2. Running Flask Locally
+## 2. Testing Flask Locally
 
-Before containerising the application, I tested it directly on my machine.
-
-I created a Python virtual environment:
+Create a Python virtual environment:
 
 ```bash
 python3 -m venv .venv
 ```
 
-Activated it:
+Activate it:
 
 ```bash
 source .venv/bin/activate
 ```
 
-Installed Flask:
+Install Flask:
 
 ```bash
 pip install flask
 ```
 
-Then ran the application:
+Run the application:
 
 ```bash
 python app.py
 ```
 
-The application could then be accessed at:
-
-```text
-http://localhost:5000
-```
-
-At this stage, Docker was not involved.
-
-The application was running using:
+At this stage Docker is not involved:
 
 ```text
 Host Machine
@@ -123,7 +84,7 @@ Flask
     ↓
 app.py
     ↓
-localhost:5000
+localhost:5001
 ```
 
 To leave the virtual environment:
@@ -132,296 +93,103 @@ To leave the virtual environment:
 deactivate
 ```
 
----
-
-# 3. Why Use a Python Virtual Environment?
-
-A virtual environment keeps project-specific Python packages separate from the system Python installation.
-
-For example:
-
-```text
-System Python
-│
-├── Project A
-│   └── .venv
-│       └── Flask version A
-│
-└── Project B
-    └── .venv
-        └── Flask version B
-```
-
-This prevents different projects from interfering with each other's dependencies.
-
 The `.venv` directory should not be committed to Git.
 
-It can be excluded using:
-
-```gitignore
-.venv/
-```
-
 ---
 
-# 4. Creating the Dockerfile
+## 3. Dockerfile Fundamentals
 
-I then created a `Dockerfile` to describe how Docker should package and run the application.
+The initial Dockerfile was:
 
 ```dockerfile
 FROM python:3.8-slim
 WORKDIR /app
 COPY . .
 RUN pip install flask
-EXPOSE 5000
+EXPOSE 5001
 CMD ["python", "app.py"]
 ```
 
-A Dockerfile is essentially a set of instructions used to build a Docker image.
-
----
-
-## FROM
+### FROM
 
 ```dockerfile
 FROM python:3.8-slim
 ```
 
-Defines the base image.
+Defines the base image. The container gets its own Python runtime rather than depending on the host machine's Python installation.
 
-In this project, the application uses a lightweight image containing Python 3.8.
-
-This means the container can use Python 3.8 regardless of which Python version is installed on the host machine.
-
-For example:
-
-```text
-Host Machine → Python 3.14
-
-Container A → Python 3.8
-Container B → Python 3.11
-Container C → Python 3.12
-```
-
-This is one of the major benefits of containerisation: applications can have isolated environments and dependencies.
-
----
-
-## WORKDIR
+### WORKDIR
 
 ```dockerfile
 WORKDIR /app
 ```
 
-Sets `/app` as the working directory inside the Docker image.
+Sets `/app` as the working directory inside the image. Following Dockerfile instructions operate relative to this directory.
 
-This is conceptually similar to:
-
-```bash
-cd /app
-```
-
-Any following instructions operate relative to this directory.
-
-The `/app` directory exists inside the Docker environment and is separate from the project directory on the host machine.
-
----
-
-## COPY
+### COPY
 
 ```dockerfile
 COPY . .
 ```
 
-Copies files from the build context into the Docker image.
+Copies the files from the current Docker build context into `/app` inside the image.
 
-The syntax can be thought of as:
-
-```text
-COPY source destination
-```
-
-In this example:
-
-```text
-COPY . .
-     ↑ ↑
-     │ └── Destination: current Docker working directory (/app)
-     │
-     └── Source: current build context
-```
-
-This copies the application files into `/app` inside the image.
-
----
-
-## RUN
+### RUN
 
 ```dockerfile
 RUN pip install flask
 ```
 
-`RUN` executes a command while the Docker image is being built.
-
-In this project, it installs Flask inside the Docker image.
-
-This means the container has its own Flask installation and does not depend on Flask being installed on the host machine.
-
-### Important
+Executes while the image is being built and installs Flask inside the image.
 
 ```text
-RUN = executed while BUILDING the image
+RUN = executes while BUILDING the image
 ```
 
-It would therefore not make sense to use:
+### EXPOSE
 
 ```dockerfile
-RUN python app.py
+EXPOSE 5001
 ```
 
-to start the application because the application should start when the container runs, not while the image is being built.
+Documents the port the application is intended to listen on inside the container. It does not publish the port to the host by itself.
 
----
-
-## EXPOSE
-
-```dockerfile
-EXPOSE 5000
-```
-
-Documents that the application inside the container is intended to listen on port `5000`.
-
-`EXPOSE` does not by itself make the application accessible through the host machine.
-
-Port publishing is performed when the container is started using `-p`.
-
----
-
-## CMD
+### CMD
 
 ```dockerfile
 CMD ["python", "app.py"]
 ```
 
-Defines the default command that runs when a container starts from the image.
-
-In this project:
+Defines the default command that runs when a container starts.
 
 ```text
-Container Starts
-      ↓
-CMD
-      ↓
-python app.py
-      ↓
-Flask Starts
-```
-
-### RUN vs CMD
-
-A key distinction is:
-
-```text
-RUN → executes while building the IMAGE
-
-CMD → executes when starting the CONTAINER
+RUN → executes during image build
+CMD → executes when the container starts
 ```
 
 ---
 
-# 5. Building the Docker Image
+## 4. Building and Running the Image
 
-The image was built using:
+Build the image:
 
 ```bash
-docker build -t hello-flask-practice .
+docker build -t flask-docker-app .
 ```
 
-### Command Breakdown
-
-`docker build`
-
-Builds a Docker image.
-
-`-t`
-
-Allows the image to be given a tag/name.
-
-`hello-flask-practice`
-
-The name assigned to the image.
-
-`.`
-
-Uses the current directory as the Docker build context.
-
-Docker then processes the Dockerfile:
-
-```text
-FROM
-  ↓
-WORKDIR
-  ↓
-COPY
-  ↓
-RUN
-  ↓
-EXPOSE
-  ↓
-CMD
-  ↓
-Docker Image
-```
-
----
-
-# 6. Viewing Docker Images
-
-To view locally available images:
+View images:
 
 ```bash
 docker images
 ```
 
-After building, the image appeared as:
-
-```text
-hello-flask-practice:latest
-```
-
-At this stage, the application was packaged into an image but was not yet running.
-
-```text
-Docker Image ≠ Running Application
-```
-
-A container still needed to be created from the image.
-
----
-
-# 7. Running the Docker Container
-
-The container was started using:
+Run the container:
 
 ```bash
-docker run -d -p 5000:5000 --name flask-practice hello-flask-practice
+docker run -d -p 5001:5001 --name flask-docker-app flask-docker-app
 ```
 
-### Command Breakdown
-
-`docker run`
-
-Creates and starts a container from an image.
-
-`-d`
-
-Runs the container in detached mode so it runs in the background.
-
-`-p 5000:5000`
-
-Publishes/maps the host port to the container port.
-
-The syntax is:
+Port mapping syntax:
 
 ```text
 -p HOST_PORT:CONTAINER_PORT
@@ -430,275 +198,24 @@ The syntax is:
 Therefore:
 
 ```text
--p 5000:5000
-
-Host :5000
-    ↓
-Container :5000
-```
-
-`--name flask-practice`
-
-Assigns the container a human-readable name.
-
-`hello-flask-practice`
-
-Specifies the Docker image used to create the container.
-
----
-
-# 8. Docker Port Mapping
-
-The application can be accessed through:
-
-```text
-http://localhost:5000
-```
-
-The request flows through:
-
-```text
-Browser
-   ↓
-localhost:5000
-   ↓
-Host Port 5000
-   ↓
-Docker Port Mapping
-   ↓
-Container Port 5000
-   ↓
-Flask Application
-```
-
-The host and container ports do not have to be the same.
-
-For example:
-
-```bash
-docker run -p 8080:5000 hello-flask-practice
-```
-
-would create:
-
-```text
-Browser
-   ↓
-localhost:8080
-   ↓
-Host :8080
-   ↓
-Container :5000
-   ↓
+localhost:5001
+      ↓
+Host port 5001
+      ↓
+Docker port mapping
+      ↓
+Container port 5001
+      ↓
 Flask
 ```
 
-The important syntax to remember is:
-
-```text
--p HOST_PORT:CONTAINER_PORT
-```
-
----
-
-# 9. Viewing Running Containers
-
-Running containers can be viewed using:
+View running containers:
 
 ```bash
 docker ps
 ```
 
-For this project, the output showed information such as:
-
-```text
-IMAGE        → hello-flask-practice
-COMMAND      → python app.py
-STATUS       → Up
-PORTS        → 5000->5000
-NAME         → flask-practice
-```
-
-This confirmed that the application was running inside the Docker container.
-
----
-
-# 10. Docker Image vs Docker Container
-
-## Docker Image
-
-An image is a packaged, reusable template.
-
-The `hello-flask-practice` image contains roughly:
-
-```text
-Docker Image
-│
-├── Python 3.8
-├── Flask
-└── /app
-    └── app.py
-```
-
-## Docker Container
-
-A container is a running instance of an image.
-
-For this project:
-
-```text
-IMAGE
-hello-flask-practice
-        ↓
-    docker run
-        ↓
-CONTAINER
-flask-practice
-```
-
-One Docker image can be used to create multiple containers.
-
----
-
-# 11. Running Locally vs Running With Docker
-
-One of the most important lessons from this project was understanding why the webpage looked identical before and after using Docker.
-
-The application itself did not change.
-
-What changed was the environment running it.
-
-## Before Docker
-
-```text
-Host Machine
-    ↓
-Python
-    ↓
-.venv
-    ↓
-Flask
-    ↓
-app.py
-    ↓
-localhost:5000
-```
-
-The host machine was directly responsible for providing Python and Flask.
-
-## With Docker
-
-```text
-Host Machine
-    ↓
-Docker
-    ↓
-Container
-│
-├── Python 3.8
-├── Flask
-└── app.py
-     ↓
-Flask :5000
-     ↓
-Docker Port Mapping
-     ↓
-localhost:5000
-```
-
-The container now provides the application's runtime and dependencies.
-
-The local Python virtual environment is no longer required to run the containerised application.
-
----
-
-# 12. Why Docker Is Useful
-
-Without Docker, another engineer may need instructions such as:
-
-```text
-Install Python
-Install the correct Python version
-Create a virtual environment
-Install Flask
-Install other dependencies
-Run the application
-```
-
-Different machines may have different versions or configurations, which can lead to the classic:
-
-> "It works on my machine."
-
-Docker allows the application and its required environment to be packaged together.
-
-Conceptually:
-
-```text
-Application
-+
-Runtime
-+
-Dependencies
-+
-Configuration
-+
-Startup Command
-=
-Docker Image
-```
-
-Someone with Docker can then run the image without manually reproducing the same application environment.
-
----
-
-# Useful Commands
-
-```bash
-# Create a Python virtual environment
-python3 -m venv .venv
-
-# Activate the virtual environment
-source .venv/bin/activate
-
-# Exit the virtual environment
-deactivate
-
-# Install Flask locally
-pip install flask
-
-# Run Flask locally
-python app.py
-
-# Build the Docker image
-docker build -t hello-flask-practice .
-
-# View Docker images
-docker images
-
-# Create and start the container
-docker run -d -p 5000:5000 --name flask-practice hello-flask-practice
-
-# View running containers
-docker ps
-
-# View all containers, including stopped containers
-docker ps -a
-
-# Stop the container
-docker stop flask-practice
-
-# Start the container again
-docker start flask-practice
-
-# Remove a stopped container
-docker rm flask-practice
-```
-
----
-
-# Key Takeaways
-
-The main Docker workflow is:
+The core Docker lifecycle is:
 
 ```text
 Dockerfile
@@ -710,36 +227,621 @@ IMAGE
 docker run
     ↓
 CONTAINER
+```
+
+---
+
+# Part 2 - Docker Networking: Flask + MySQL
+
+The next exercise expanded the application from one container to two containers that communicate with each other.
+
+The goal was:
+
+```text
+Browser
+   ↓
+localhost:5002
+   ↓
+Flask Container (myapp)
+   ↓
+Custom Docker Network
+   ↓
+MySQL Container (mydb)
+```
+
+Instead of Flask simply returning a static message, Flask connects to MySQL, asks MySQL for its version and displays the result in the browser.
+
+---
+
+## 5. Docker Networking Basics
+
+Docker networking allows containers to communicate with:
+
+- Other containers
+- The host machine
+- External networks
+
+Two useful network modes introduced were bridge and host.
+
+### Bridge Network
+
+Bridge networking keeps containers on a Docker-managed network. A user-defined bridge network is useful when multiple containers need to communicate.
+
+```text
+        Docker Bridge Network
+┌─────────────────────────────┐
+│                             │
+│   Flask  ─────────→ MySQL   │
+│                             │
+└─────────────────────────────┘
+```
+
+Containers on the same user-defined network can communicate using container names rather than hard-coded IP addresses.
+
+### Host Network
+
+Host networking allows a container to use the host's network stack more directly. This provides less network isolation and can make port conflicts more likely.
+
+For normal multi-container applications, user-defined bridge networks are particularly useful.
+
+---
+
+## 6. Creating a Custom Docker Network
+
+Create the network:
+
+```bash
+docker network create my-custom-network
+```
+
+This creates a network that both application containers can join.
+
+Conceptually:
+
+```text
+my-custom-network
+│
+├── myapp   (Flask)
+│
+└── mydb    (MySQL)
+```
+
+View Docker networks with:
+
+```bash
+docker network ls
+```
+
+---
+
+## 7. Starting the MySQL Container
+
+The course originally demonstrated MySQL 5.7, but on the Apple Silicon Mac that image did not provide a compatible `linux/arm64/v8` manifest, so MySQL 8 was used instead.
+
+Run MySQL:
+
+```bash
+docker run -d \
+  --name mydb \
+  --network my-custom-network \
+  -e MYSQL_ROOT_PASSWORD=my-secret-pw \
+  mysql:8
+```
+
+### Command Breakdown
+
+```text
+docker run
+→ Create and start a container
+
+-d
+→ Run in detached/background mode
+
+--name mydb
+→ Name the container "mydb"
+
+--network my-custom-network
+→ Attach MySQL to the custom Docker network
+
+-e MYSQL_ROOT_PASSWORD=my-secret-pw
+→ Set the MySQL root password as an environment variable
+
+mysql:8
+→ Use the MySQL 8 image
+```
+
+The MySQL container listens internally on port `3306`.
+
+It does not need to be published to the Mac just for the Flask container to access it because both containers communicate through the Docker network.
+
+---
+
+## 8. Updating Flask to Connect to MySQL
+
+The Flask application was changed to:
+
+```python
+from flask import Flask
+import MySQLdb
+
+app = Flask(__name__)
+
+@app.route('/')
+def hello_world():
+    db = MySQLdb.connect(
+        host="mydb",
+        user="root",
+        passwd="my-secret-pw",
+        db="mysql"
+    )
+
+    cur = db.cursor()
+    cur.execute("SELECT VERSION()")
+    version = cur.fetchone()
+
+    return f'Hello, World! MySQL version: {version[0]}'
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5002)
+```
+
+The most important line for Docker networking is:
+
+```python
+host="mydb"
+```
+
+`mydb` is the name of the MySQL container.
+
+Because both containers are connected to `my-custom-network`, Docker's internal DNS can resolve the container name.
+
+Conceptually:
+
+```text
+Flask asks for "mydb"
+        ↓
+Docker DNS
+        ↓
+Find container named mydb
+        ↓
+MySQL container :3306
+```
+
+This means there is no need to hard-code a changing container IP address such as `172.x.x.x`.
+
+---
+
+## 9. Adding the MySQL Python Client
+
+The Flask application now contains:
+
+```python
+import MySQLdb
+```
+
+The `MySQLdb` module is provided by the Python `mysqlclient` package.
+
+The original Dockerfile only installed Flask:
+
+```dockerfile
+RUN pip install flask
+```
+
+It therefore needed to become:
+
+```dockerfile
+RUN pip install flask mysqlclient
+```
+
+However, the first build failed because `python:3.8-slim` is intentionally minimal and did not contain the Linux development tools/libraries required to build `mysqlclient`.
+
+The error included:
+
+```text
+pkg-config: not found
+Can not find valid pkg-config name
+```
+
+This demonstrated an important Docker concept:
+
+> Python packages can depend on operating-system-level packages. Those dependencies must also exist inside the Docker image.
+
+---
+
+## 10. Fixing the mysqlclient Build
+
+The Dockerfile was updated to install the required system dependencies first:
+
+```dockerfile
+FROM python:3.8-slim
+
+WORKDIR /app
+
+COPY . .
+
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    default-libmysqlclient-dev \
+    build-essential
+
+RUN pip install flask mysqlclient
+
+EXPOSE 5002
+
+CMD ["python", "app.py"]
+```
+
+### What the new packages do
+
+`pkg-config`
+
+Helps build tools locate installed libraries and their compiler/linker settings.
+
+`default-libmysqlclient-dev`
+
+Provides development files needed to build software that communicates with MySQL-compatible databases.
+
+`build-essential`
+
+Provides common Linux compilation tools required when Python packages need native code compiled during installation.
+
+The exact package names are less important than the lesson:
+
+```text
+Python dependency
+      ↓
+May require OS dependency
+      ↓
+Install OS dependency in Dockerfile
+      ↓
+pip install succeeds
+```
+
+---
+
+## 11. Building the Flask + MySQL Image
+
+The updated application image was built with:
+
+```bash
+docker build -t flask-docker-app-mysql .
+```
+
+The resulting image was:
+
+```text
+flask-docker-app-mysql:latest
+```
+
+Remember:
+
+```text
+Dockerfile
     ↓
-Application Running
+docker build
+    ↓
+Image
 ```
 
-Important distinctions:
+The image must successfully exist before `docker run` can create a container from it.
+
+---
+
+## 12. Running the Flask Container on the Network
+
+Run Flask with:
+
+```bash
+docker run -d \
+  --name myapp \
+  --network my-custom-network \
+  -p 5002:5002 \
+  flask-docker-app-mysql
+```
+
+### Command Breakdown
 
 ```text
-Dockerfile = instructions for building an image
+--name myapp
+→ Name the Flask container "myapp"
 
-Image = packaged reusable template
+--network my-custom-network
+→ Put Flask on the same network as MySQL
 
-Container = running instance of an image
+-p 5002:5002
+→ Host port 5002 maps to Flask container port 5002
+
+flask-docker-app-mysql
+→ Image used to create the Flask container
 ```
+
+The two containers are now connected through the same Docker network:
 
 ```text
-RUN = executes during image build
-
-CMD = executes when the container starts
+                    Host Machine
+                         │
+                  localhost:5002
+                         │
+                         ▼
+                ┌────────────────┐
+                │     myapp      │
+                │ Flask + Python │
+                │     :5002      │
+                └───────┬────────┘
+                        │
+                        │ host="mydb"
+                        │
+                my-custom-network
+                        │
+                        ▼
+                ┌────────────────┐
+                │      mydb      │
+                │    MySQL 8     │
+                │     :3306      │
+                └────────────────┘
 ```
+
+---
+
+## 13. Verifying the Containers
+
+Check running containers:
+
+```bash
+docker ps
+```
+
+The important containers should be:
 
 ```text
-EXPOSE = documents the intended container port
-
--p = actually publishes/maps host and container ports
+myapp → flask-docker-app-mysql
+mydb  → mysql:8
 ```
+
+Opening:
+
+```text
+http://localhost:5002
+```
+
+should return a message containing the MySQL version.
+
+The request flow is:
+
+```text
+Browser
+   ↓
+localhost:5002
+   ↓
+Host port 5002
+   ↓
+myapp :5002
+   ↓
+Python executes MySQL query
+   ↓
+Docker resolves "mydb"
+   ↓
+my-custom-network
+   ↓
+mydb :3306
+   ↓
+MySQL returns version
+   ↓
+Flask returns response
+   ↓
+Browser
+```
+
+---
+
+# Troubleshooting Lessons
+
+## Image Not Found
+
+An attempted command used:
+
+```bash
+docker run ... flask-docker-app-mysql
+```
+
+before the image had successfully built.
+
+Docker therefore reported that it could not find the image locally and attempted to pull it from a registry.
+
+Lesson:
+
+```text
+docker build must succeed
+        ↓
+Image exists locally
+        ↓
+docker run can use it
+```
+
+Check available images with:
+
+```bash
+docker images
+```
+
+---
+
+## Command Typo
+
+A typo accidentally joined the network name and `-p` option:
+
+```text
+--network my-custom-networkv-p 5002:5002
+```
+
+Docker then interpreted the command incorrectly and treated `5002:5002` as an image name.
+
+Correct structure:
+
+```bash
+docker run -d --name myapp --network my-custom-network -p 5002:5002 flask-docker-app-mysql
+```
+
+Lesson: Docker CLI arguments are positional enough that a missing space can change how later arguments are interpreted.
+
+---
+
+## MySQL 5.7 on Apple Silicon
+
+The attempted MySQL 5.7 container failed with:
+
+```text
+no matching manifest for linux/arm64/v8
+```
+
+MySQL 8 was used for this exercise instead:
+
+```bash
+docker run -d --name mydb --network my-custom-network -e MYSQL_ROOT_PASSWORD=my-secret-pw mysql:8
+```
+
+---
+
+# Useful Commands
+
+```bash
+# Build the basic Flask image
+docker build -t flask-docker-app .
+
+# View images
+docker images
+
+# View running containers
+docker ps
+
+# View all containers
+docker ps -a
+
+# Create a custom network
+docker network create my-custom-network
+
+# View Docker networks
+docker network ls
+
+# Start MySQL on the custom network
+docker run -d --name mydb --network my-custom-network -e MYSQL_ROOT_PASSWORD=my-secret-pw mysql:8
+
+# Build the Flask + MySQL image
+docker build -t flask-docker-app-mysql .
+
+# Start Flask on the same network
+docker run -d --name myapp --network my-custom-network -p 5002:5002 flask-docker-app-mysql
+
+# Stop the containers
+docker stop myapp mydb
+
+# Start them again
+docker start mydb myapp
+
+# Remove stopped containers
+docker rm myapp mydb
+
+# Inspect a network and its connected containers
+docker network inspect my-custom-network
+
+# Remove a network when it is no longer needed
+docker network rm my-custom-network
+```
+
+---
+
+# Key Takeaways
+
+## Docker Lifecycle
+
+```text
+Dockerfile
+    ↓
+docker build
+    ↓
+IMAGE
+    ↓
+docker run
+    ↓
+CONTAINER
+```
+
+## Docker Networking
+
+```text
+CONTAINER A
+     │
+     │
+DOCKER NETWORK
+     │
+     │
+CONTAINER B
+```
+
+## Full Application
+
+```text
+SOURCE CODE
+     ↓
+DOCKERFILE
+     ↓
+   IMAGE
+     ↓
+FLASK CONTAINER
+     │
+     │ Docker Network
+     ↓
+MYSQL CONTAINER
+```
+
+## Container Names
+
+Containers on the same user-defined Docker network can communicate using names:
+
+```text
+myapp → host="mydb" → Docker DNS → mydb
+```
+
+This avoids relying on changing container IP addresses.
+
+## Port Publishing
 
 ```text
 -p HOST_PORT:CONTAINER_PORT
 ```
 
-The biggest lesson from this exercise:
+The Flask container needs port `5002` published so the browser on the host can access it.
 
-> Docker does not necessarily change what the application does. It changes how the application and its dependencies are packaged, distributed and run.
+The MySQL port does not need to be published to the host for Flask to communicate with MySQL through the Docker network.
+
+## Dependencies
+
+```text
+Application dependency
+        ↓
+Python package
+        ↓
+May require Linux/system package
+        ↓
+Dockerfile must provide both
+```
+
+## Biggest Lesson From the Networking Exercise
+
+> Containers are isolated processes, but Docker networks allow them to form a multi-container application. Instead of hard-coding IP addresses, containers on a user-defined network can discover each other by name.
+
+The progression so far is therefore:
+
+```text
+Single application
+      ↓
+Docker image
+      ↓
+Single container
+      ↓
+Port mapping
+      ↓
+Docker networking
+      ↓
+Multiple communicating containers
+```
